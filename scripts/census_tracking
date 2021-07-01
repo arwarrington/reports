@@ -1,0 +1,112 @@
+--number of pledge to be counted
+create temporary table pledges as (
+  
+select c.committeename,g.activity, count (distinct sr.contactssurveyresponseid) as "activity_total", g.goal 
+from vansync.ppfa_contactssurveyresponses_mym sr 
+join vansync.ppfa_users u
+	on sr.canvassedby=u.userid
+join vansync.ppfa_committees c
+	on c.committeeid=sr.committeeid
+join awarrington.census_dashboard__goals g
+	on g.committeeid=c.committeeid
+where sr.surveyquestionid='366537' --pledge to be counted sq 
+and sr.surveyresponseid='1507631' --yes
+and g.activity='pledge to be counted'
+group by 1,2,4
+order by 1
+  ); 
+
+--number of cavasses 
+create temporary table canvasses as ( 
+  
+select e.createdbycommitteename as "committeename",g.activity, count (distinct e.eventid) as "activity_total", g.goal
+from vansync.ppfa_events_mym e
+join vansync.ppfa_eventscodes_mym ec
+	on e.eventid=ec.eventid
+left join vansync.ppfa_users u
+	on e.createdbyusername=u.username
+join awarrington.census_dashboard__goals g
+	on e.createdbycommitteeid=g.committeeid
+where ec.codeid='1007896' --census event code 
+and e.eventcalendarname='Canvassing'
+and g.activity='canvass'
+group by 1,2,4
+order by 1  
+  
+  );
+  
+
+  
+--number of phonebanks 
+create temporary table phonebanks as ( 
+  
+select c.committeename, g.activity, count (distinct e.eventid) as "activity_total", g.goal
+from vansync.ppfa_events_mym e
+join vansync.ppfa_eventscodes_mym ec
+	on e.eventid=ec.eventid
+left join vansync.ppfa_users u
+	on e.createdbyusername=u.username
+join awarrington.census_dashboard__goals g
+	on e.createdbycommitteeid=g.committeeid
+join vansync.ppfa_committees c
+  on e.createdbycommitteeid=c.committeeid
+where ec.codeid ='1007896' --census event code 
+and e.eventcalendarname='Phone Bank'
+and g.activity='phone bank'
+group by 1,2,4
+order by 1
+  
+  ); 
+  
+
+  
+  
+--number of other events
+create temporary table other as ( 
+  
+select c.committeename,g.activity, count (distinct e.eventid) as "activity_total",g.goal
+from vansync.ppfa_events_mym e
+join vansync.ppfa_eventscodes_mym ec
+	on e.eventid=ec.eventid
+left join vansync.ppfa_users u
+	on e.createdbyusername=u.username
+join awarrington.census_dashboard__goals g
+	on e.createdbycommitteeid=g.committeeid
+join vansync.ppfa_committees c
+  on e.createdbycommitteeid=c.committeeid
+where ec.codeid ='1007896' --census event code 
+and e.eventcalendarname not in ('Phone Bank','Canvassing')
+and g.activity='other'
+group by 1,2,4
+order by 1
+  
+  ); 
+  
+
+  
+ 
+
+drop table if exists awarrington.census_ptg;
+
+create table awarrington.census_ptg as (
+  select 
+  distinct g.committeename,
+  g.activity,
+   case when a.activity_total is not null then 
+   cast(a.activity_total as decimal (18,2))
+  /
+ cast(a.goal as decimal(18,2))  ELSE 0 END as "ptg",
+  a.activity_total
+  from awarrington.census_dashboard__goals g
+  left join (select * from pledges 
+             union
+    				 select * from canvasses 
+             union 
+             select * from phonebanks
+             union 
+             select * from other) a
+  	on a.committeename=g.committeename
+    and a.activity=g.activity
+  	
+);
+
