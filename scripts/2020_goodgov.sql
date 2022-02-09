@@ -11,6 +11,24 @@ join (
 group by 1,2
 ;
 
+--texts and calls
+create temporary table tc as 
+select concat(vanid,statecode) as "vanid_state", 
+	   statecode, 
+       contactscontactid,
+       contacttypeid 
+       from vansync.ppfa_contactscontacts_vf 
+       where contacttypeid in (1,19,133,81,4,81,37,132) and campaignid='29576'
+;
+--digital
+create temporary table d as 
+select concat(voter_file_vanid,mstate) as "vanid_state",
+      		  mstate as "statecode",
+              1 as "contactscontactid",
+			      3000 as "contacttypeid"
+            from awarrington.digitotal 
+;            
+
 
 create temporary table attempts as
   select 
@@ -19,10 +37,10 @@ create temporary table attempts as
   			 committeeid,
          'gg_1' as univ_bucket,
            case
-       		 when cc.texts=0 and cc.calls!=0 then 'called only'
-           when cc.texts!=0 and cc.calls=0 then 'texted only'
-           when cc.texts!=0 and cc.calls!=0 then 'called and texted'
-           else 'not contacted' end as "mode",   
+       		 when cc.texts=0 and cc.digital=0 and cc.calls!=0 then 'called only'
+           when cc.texts=0 and cc.digital!=0 and cc.calls=0 then 'digital only'
+           when cc.texts!=0 and cc.digital=0 and cc.calls=0 then 'texted only'
+           else 'multiple modes' end as "mode",   
            cc.contact                                                        
   from 
  			(select concat(dwid, state) as dwid_state, state from catalist_periodic_install.goodgovernance20210927) um
@@ -32,34 +50,21 @@ create temporary table attempts as
     and dwid.statecode=um.state
   left join
   (
- select vanid,
-          statecode,
-    			committeeid,
-                count(*) as "contact",
+ select vanid_state,
+       statecode,
+	   count(*) as "contact",
        count(case when contacttypeid in (37,132) then 1 else null end) as texts,
-       count(case when contacttypeid in (1,19,133,81,4,81) then 1 else null end) as calls
-    from vansync.ppfa_contactscontacts_vf --MY VOTERS TAB ONLY  
-    where contacttypeid in (1,19,133,81,4,81,37,132)
-    and campaignid='29576'
-    group by 1,2,3
+       count(case when contacttypeid in (1,19,133,81,4,81) then 1 else null end) as calls,
+       count(case when contacttypeid=3000 then 1 else null end) as digital 
+    from tc
+    full outer join d using(vanid_state,statecode,contactscontactid,contacttypeid) 
+    group by 1,2
   ) cc
  on cc.vanid=dwid.vanid
  and cc.statecode=dwid.statecode
 ;
 
---attach digital attempts 
-create temporary table all_attempts as 
-select * from attempts
-left join
-  (
-  select    concat(d.voter_file_vanid,d.mstate) as "dwid_state",
-            'digital' as "mode",
-            count(distinct d.voter_file_vanid) as "contact"
-            from awarrington.digitotal d 
-            left join vansync.ppfa_contactscontacts_vf vf 
-            on vf.vanid=d.voter_file_vanid and vf.statecode=d.mstate
-            group by 1,2,3,4) digital
-  on attempts.dwid_state=digital.dwid_state
+
 ;
 
 drop table if exists awarrington.good_governance_penetration_test;
