@@ -1,4 +1,3 @@
-drop table if exists awarrington.good_governance_penetration;
 drop table if exists awarrington.good_governance_totals;
 create table awarrington.good_governance_totals as 
 select dwid.statecode,
@@ -34,18 +33,17 @@ create temporary table attempts as
   select 
   			 um.dwid_state,
   			 um.state,
-  			 committeeid,
          'gg_1' as univ_bucket,
            case
-       		 when cc.texts=0 and cc.digital=0 and cc.calls!=0 then 'called only'
-           when cc.texts=0 and cc.digital!=0 and cc.calls=0 then 'digital only'
-           when cc.texts!=0 and cc.digital=0 and cc.calls=0 then 'texted only'
-           else 'multiple modes' end as "mode",   
+       		 when cc.digital=0 and cc.calls!=0 then 'called only'
+           when cc.digital!=0 and cc.calls=0 then 'digital only'
+           when cc.digital!=0 and cc.calls!=0 then 'called and digital'
+           else 'not contacted' end as "mode",   
            cc.contact                                                        
   from 
  			(select concat(dwid, state) as dwid_state, state from catalist_periodic_install.goodgovernance20210927) um
   left join (
-    select concat(dwid, statecode) as dwid_state,statecode, vanid from vansync.ppfa_voterfiledwidlookup) dwid 
+    select concat(dwid, statecode) as dwid_state,concat(vanid,statecode) as vanid_state, statecode, vanid from vansync.ppfa_voterfiledwidlookup) dwid 
     on dwid.dwid_state=um.dwid_state
     and dwid.statecode=um.state
   left join
@@ -60,15 +58,15 @@ create temporary table attempts as
     full outer join d using(vanid_state,statecode,contactscontactid,contacttypeid) 
     group by 1,2
   ) cc
- on cc.vanid=dwid.vanid
+ on cc.vanid_state=dwid.vanid_state
  and cc.statecode=dwid.statecode
 ;
 
 
 ;
 
-drop table if exists awarrington.good_governance_penetration_test;
-create table awarrington.good_governance_penetration_test as
+drop table if exists awarrington.good_governance_penetration;
+create table awarrington.good_governance_penetration as
 select state, 
 			 univ_bucket, 
        mode,
@@ -79,6 +77,6 @@ select state,
         cast(sum(case when contact = 4 then 1 else null end) as decimal(18,2)) as pct_four,
         cast(sum(case when contact = 5 then 1 else null end) as decimal(18,2)) as pct_five,
         cast(sum(case when contact>5 then 1 else null end) as decimal(18,2)) as pct_six_more        
-from all_attempts
-group by 1,2,3,4
+from attempts
+group by 1,2,3
 order by 1
